@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LangGraph Customer Support Agent — Architecture</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0f1117;
+    --bg2:       #181c27;
+    --bg3:       #1e2332;
+    --border:    rgba(255,255,255,0.08);
+    --border2:   rgba(255,255,255,0.14);
+    --text:      #e2e4ed;
+    --muted:     #7c8099;
+    --purple:    #8b7cf8;
+    --purple-bg: rgba(139,124,248,0.12);
+    --amber:     #f0a940;
+    --amber-bg:  rgba(240,169,64,0.12);
+    --teal:      #34c9a0;
+    --teal-bg:   rgba(52,201,160,0.12);
+    --coral:     #f07060;
+    --coral-bg:  rgba(240,112,96,0.12);
+    --gray:      #9ca0b0;
+    --gray-bg:   rgba(156,160,176,0.12);
+    --mono:      'JetBrains Mono', 'Fira Mono', monospace;
+    --sans:      'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 24px 60px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  header p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 3px;
+  }
+
+  .diagram-wrap {
+    width: 100%;
+    max-width: 780px;
+  }
+
+  svg text { font-family: var(--sans); }
+
+  /* Node styles */
+  .node-purple rect { fill: var(--purple-bg); stroke: var(--purple); stroke-width: 1; }
+  .node-purple .label { fill: var(--purple); font-size: 13px; font-weight: 600; }
+  .node-purple .sublabel { fill: #a89ef8; font-size: 11px; }
+
+  .node-amber rect { fill: var(--amber-bg); stroke: var(--amber); stroke-width: 1; }
+  .node-amber .label { fill: var(--amber); font-size: 13px; font-weight: 600; }
+  .node-amber .sublabel { fill: #c9974a; font-size: 11px; }
+
+  .node-teal rect { fill: var(--teal-bg); stroke: var(--teal); stroke-width: 1; }
+  .node-teal .label { fill: var(--teal); font-size: 13px; font-weight: 600; }
+  .node-teal .sublabel { fill: #5ec9ad; font-size: 11px; }
+
+  .node-coral rect { fill: var(--coral-bg); stroke: var(--coral); stroke-width: 1; }
+  .node-coral .label { fill: var(--coral); font-size: 13px; font-weight: 600; }
+  .node-coral .sublabel { fill: #d4806f; font-size: 11px; }
+
+  .node-gray rect { fill: var(--gray-bg); stroke: var(--gray); stroke-width: 1; }
+  .node-gray .label { fill: var(--gray); font-size: 13px; font-weight: 600; }
+
+  .pydantic-badge rect { fill: rgba(255,255,255,0.04); stroke: rgba(255,255,255,0.12); stroke-width: 0.75; stroke-dasharray: 3 2; }
+  .pydantic-badge .key { fill: #7c8099; font-size: 10px; font-weight: 500; }
+  .pydantic-badge .val { font-size: 10px; font-weight: 600; }
+  .pydantic-badge .val-purple { fill: #a89ef8; }
+  .pydantic-badge .val-amber  { fill: #d4ac6a; }
+
+  .arr { stroke: rgba(255,255,255,0.22); stroke-width: 1; fill: none; }
+  .arr-label { fill: #5a5f78; font-size: 10px; }
+  .leader { stroke: rgba(255,255,255,0.12); stroke-width: 0.75; stroke-dasharray: 3 2; fill: none; }
+
+  .persist-bar rect { fill: rgba(156,160,176,0.07); stroke: rgba(156,160,176,0.2); stroke-width: 0.75; }
+  .persist-bar text { fill: var(--muted); font-size: 10.5px; }
+
+  /* Tooltip */
+  .tooltip {
+    position: fixed;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text);
+    max-width: 260px;
+    line-height: 1.5;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 99;
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-title { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
+  .tooltip .tt-code { font-family: var(--mono); font-size: 10.5px; color: var(--muted); background: rgba(255,255,255,0.04); padding: 2px 5px; border-radius: 4px; display: inline-block; margin-top: 3px; }
+
+  .clickable { cursor: pointer; }
+  .clickable rect { transition: filter 0.15s; }
+  .clickable:hover rect { filter: brightness(1.25); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Multi-Layered Guardrail System (NeMo/Presidio-style)</h1>
+  <p>Architecture diagram · hover nodes for detail · GPT-4o-mini via OpenRouter + Presidio + HF classifiers</p>
+</header>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#8b7cf8"></div>LLM call (GPT-4o-mini)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0a940"></div>Guard / gate / validation</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#34c9a0"></div>Data handling / output</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f07060"></div>Blocked / early-exit path</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgba(255,255,255,0.08); border:1px dashed rgba(255,255,255,0.2)"></div>Schema / config badge</div>
+</div>
+
+<div class="diagram-wrap">
+<svg width="100%" viewBox="0 0 780 1010" role="img">
+  <title>Guardrail System Architecture</title>
+  <desc>Flowchart of guarded_generate(): input guards for prompt injection and topic restriction, PII masking, an LLM call, then output guards for JSON validity, toxicity, and policy contradiction.</desc>
+
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arr-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="rgba(240,112,96,0.4)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- START -->
+  <g class="node-gray">
+    <rect x="300" y="16" width="180" height="34" rx="17"/>
+    <text class="label" x="390" y="37" text-anchor="middle">START — user_input</text>
+  </g>
+  <line x1="390" y1="50" x2="390" y2="80" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 1: injection guard -->
+  <g class="node-amber clickable" id="n-injection" data-tt="injection">
+    <rect x="200" y="80" width="380" height="70" rx="8"/>
+    <text class="label" x="390" y="103" text-anchor="middle">detect_prompt_injection</text>
+    <text class="sublabel" x="390" y="120" text-anchor="middle">7 regex patterns: "ignore instructions", "jailbreak", "bypass safety"...</text>
+    <text class="sublabel" x="390" y="135" text-anchor="middle">match → block &amp; return report</text>
+  </g>
+  <g class="node-coral clickable" id="n-block1" data-tt="block1">
+    <rect x="595" y="83" width="170" height="46" rx="8"/>
+    <text class="label" x="680" y="102" text-anchor="middle" style="font-size:11.5px">BLOCKED</text>
+    <text class="sublabel" x="680" y="117" text-anchor="middle">risk_flags += prompt_injection</text>
+  </g>
+  <line x1="580" y1="106" x2="595" y2="106" class="leader"/>
+  <path d="M765 106 L700 106 L700 940" class="arr" fill="none" stroke="rgba(240,112,96,0.4)" stroke-dasharray="5 3" marker-end="url(#arr-muted)"/>
+  <line x1="390" y1="150" x2="390" y2="180" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 2: topic guard -->
+  <g class="node-amber clickable" id="n-topic" data-tt="topic">
+    <rect x="200" y="180" width="380" height="70" rx="8"/>
+    <text class="label" x="390" y="203" text-anchor="middle">is_allowed_topic</text>
+    <text class="sublabel" x="390" y="220" text-anchor="middle">keyword match against ALLOWED_TOPICS (6 safety topics)</text>
+    <text class="sublabel" x="390" y="235" text-anchor="middle">no match → block &amp; return report</text>
+  </g>
+  <g class="node-coral clickable" id="n-block2" data-tt="block2">
+    <rect x="595" y="183" width="170" height="46" rx="8"/>
+    <text class="label" x="680" y="202" text-anchor="middle" style="font-size:11.5px">BLOCKED</text>
+    <text class="sublabel" x="680" y="217" text-anchor="middle">risk_flags += topic_violation</text>
+  </g>
+  <line x1="580" y1="206" x2="595" y2="206" class="leader"/>
+  <path d="M765 206 L730 206 L730 940" class="arr" fill="none" stroke="rgba(240,112,96,0.4)" stroke-dasharray="5 3" marker-end="url(#arr-muted)"/>
+  <line x1="390" y1="250" x2="390" y2="280" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 3: PII masking -->
+  <g class="node-teal clickable" id="n-pii" data-tt="pii">
+    <rect x="200" y="280" width="380" height="58" rx="8"/>
+    <text class="label" x="390" y="303" text-anchor="middle">mask_pii</text>
+    <text class="sublabel" x="390" y="320" text-anchor="middle">Presidio AnalyzerEngine + AnonymizerEngine → masked_text</text>
+  </g>
+  <g class="pydantic-badge clickable" id="n-piibadge" data-tt="piibadge">
+    <rect x="595" y="282" width="170" height="54" rx="6"/>
+    <text class="key" x="605" y="298">pii_entities tuple</text>
+    <text class="val val-purple" x="605" y="314" style="font-size:10px;font-family:monospace">(type, start, end, score)</text>
+    <text class="key" x="605" y="328">sets pii_detected flag</text>
+  </g>
+  <line x1="580" y1="309" x2="595" y2="309" class="leader"/>
+  <line x1="390" y1="338" x2="390" y2="368" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 4: LLM call -->
+  <g class="node-purple clickable" id="n-llm" data-tt="llm">
+    <rect x="200" y="368" width="380" height="70" rx="8"/>
+    <text class="label" x="390" y="391" text-anchor="middle">LLM call — gpt-4o-mini</text>
+    <text class="sublabel" x="390" y="408" text-anchor="middle">via OpenRouter (client.chat.completions.create)</text>
+    <text class="sublabel" x="390" y="423" text-anchor="middle">temperature=0.2 · SYSTEM_PROMPT + masked_text</text>
+  </g>
+  <line x1="390" y1="438" x2="390" y2="468" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 5: JSON validation -->
+  <g class="node-amber clickable" id="n-json" data-tt="json">
+    <rect x="200" y="468" width="380" height="70" rx="8"/>
+    <text class="label" x="390" y="491" text-anchor="middle">JSON validation</text>
+    <text class="sublabel" x="390" y="508" text-anchor="middle">json.loads(output_text)</text>
+    <text class="sublabel" x="390" y="523" text-anchor="middle">fails → format_violation flag, wraps raw text as answer</text>
+  </g>
+  <line x1="390" y1="538" x2="390" y2="568" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 6: toxicity scoring -->
+  <g class="node-amber clickable" id="n-tox" data-tt="tox">
+    <rect x="200" y="568" width="380" height="70" rx="8"/>
+    <text class="label" x="390" y="591" text-anchor="middle">toxicity scoring</text>
+    <text class="sublabel" x="390" y="608" text-anchor="middle">unitary/toxic-bert text-classification pipeline</text>
+    <text class="sublabel" x="390" y="623" text-anchor="middle">label toxic &amp; score&gt;0.6 → toxic_output flag</text>
+  </g>
+  <line x1="390" y1="638" x2="390" y2="668" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 7: NLI policy check -->
+  <g class="node-amber clickable" id="n-nli" data-tt="nli">
+    <rect x="200" y="668" width="380" height="70" rx="8"/>
+    <text class="label" x="390" y="691" text-anchor="middle">NLI policy contradiction check</text>
+    <text class="sublabel" x="390" y="708" text-anchor="middle">facebook/bart-large-mnli (premise=policy, hypothesis=answer)</text>
+    <text class="sublabel" x="390" y="723" text-anchor="middle">contradiction &amp; score&gt;0.7 → possible_policy_conflict flag</text>
+  </g>
+  <line x1="390" y1="738" x2="390" y2="768" class="arr" marker-end="url(#arr)"/>
+
+  <!-- NODE 8: final report -->
+  <g class="node-teal clickable" id="n-report" data-tt="report">
+    <rect x="200" y="768" width="380" height="58" rx="8"/>
+    <text class="label" x="390" y="791" text-anchor="middle">assemble final report</text>
+    <text class="sublabel" x="390" y="808" text-anchor="middle">final_output + risk_flags returned from guarded_generate()</text>
+  </g>
+  <line x1="390" y1="826" x2="390" y2="856" class="arr" marker-end="url(#arr)"/>
+
+  <!-- merge blocked paths into END -->
+  <path d="M700 940 L440 875" class="arr" fill="none" stroke="rgba(240,112,96,0.4)" stroke-dasharray="5 3" marker-end="url(#arr-muted)"/>
+  <path d="M730 940 L460 880" class="arr" fill="none" stroke="rgba(240,112,96,0.4)" stroke-dasharray="5 3" marker-end="url(#arr-muted)"/>
+
+  <!-- END -->
+  <g class="node-gray">
+    <rect x="300" y="856" width="180" height="34" rx="17"/>
+    <text class="label" x="390" y="877" text-anchor="middle">END — report</text>
+  </g>
+
+  <!-- persistence / test-harness bar -->
+  <g class="persist-bar">
+    <rect x="30" y="960" width="720" height="34" rx="6"/>
+    <text x="390" y="976" text-anchor="middle">📊  Test harness: 6 adversarial prompts → guarded_generate() → summary</text>
+    <text x="390" y="990" text-anchor="middle">metrics: blocked_inputs · pii_detected · format_violations · toxic_outputs · policy_conflicts</text>
+  </g>
+
+  <!-- left sidebar: shared report dict -->
+  <g class="pydantic-badge">
+    <rect x="14" y="80" width="170" height="170" rx="6"/>
+    <text class="key" x="24" y="96">report dict (shared state)</text>
+    <text class="val val-purple" x="24" y="112" style="font-size:10px;font-family:monospace">original_input, masked_input</text>
+    <text class="key" x="24" y="126">input_blocked · block_reason</text>
+    <text class="key" x="24" y="140">pii_entities</text>
+    <text class="key" x="24" y="154">injection_matches</text>
+    <text class="key" x="24" y="168">output_toxicity</text>
+    <text class="key" x="24" y="182">output_valid_json</text>
+    <text class="key" x="24" y="196">risk_flags</text>
+    <text class="key" x="24" y="214" style="font-style:italic">threaded through every guard,</text>
+    <text class="key" x="24" y="228" style="font-style:italic">returned as final report</text>
+  </g>
+  <line x1="184" y1="152" x2="200" y2="152" class="leader"/>
+
+</svg>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip">
+  <div class="tt-title" id="tt-title"></div>
+  <div id="tt-body"></div>
+</div>
+
+<script>
+const tips = {
+  injection: {
+    title: 'detect_prompt_injection',
+    body: 'Regex-scans lowercased input against <span class="tt-code">INJECTION_PATTERNS</span> (7 patterns: "ignore previous instructions", "reveal system prompt", "jailbreak", "bypass safety", etc). Any match → immediate block, LLM never called.'
+  },
+  block1: {
+    title: 'Blocked — prompt injection',
+    body: 'Sets <span class="tt-code">input_blocked=True</span>, <span class="tt-code">block_reason="Prompt injection detected"</span>, adds <span class="tt-code">prompt_injection</span> to risk_flags, returns report immediately.'
+  },
+  topic: {
+    title: 'is_allowed_topic',
+    body: 'Checks if any of 6 <span class="tt-code">ALLOWED_TOPICS</span> (responsible ai, llm safety, guardrails, pii protection, prompt injection, hallucination prevention) appear in the lowercased input.'
+  },
+  block2: {
+    title: 'Blocked — topic violation',
+    body: 'Sets <span class="tt-code">input_blocked=True</span>, <span class="tt-code">block_reason="Topic not allowed"</span>, adds <span class="tt-code">topic_violation</span> to risk_flags, returns report immediately.'
+  },
+  pii: {
+    title: 'mask_pii',
+    body: 'Runs Presidio <span class="tt-code">AnalyzerEngine.analyze()</span> then <span class="tt-code">AnonymizerEngine.anonymize()</span>. Masked text (not raw input) is what actually gets sent to the LLM.'
+  },
+  piibadge: {
+    title: 'pii_entities',
+    body: 'List of tuples <span class="tt-code">(entity_type, start, end, score)</span> per detected entity. Non-empty list → adds <span class="tt-code">pii_detected</span> to risk_flags.'
+  },
+  llm: {
+    title: 'LLM call',
+    body: 'OpenAI-compatible client pointed at <span class="tt-code">https://openrouter.ai/api/v1</span>. Model <span class="tt-code">gpt-4o-mini</span>, temperature 0.2, system prompt enforces topic scope + JSON-only output.'
+  },
+  json: {
+    title: 'JSON validation',
+    body: '<span class="tt-code">json.loads(output_text)</span> in a try/except. On failure, wraps the raw text into a fallback dict with <span class="tt-code">status="invalid_output"</span> and adds <span class="tt-code">format_violation</span>.'
+  },
+  tox: {
+    title: 'Toxicity scoring',
+    body: 'HuggingFace pipeline on <span class="tt-code">unitary/toxic-bert</span>, run on the first 512 chars of the answer. Label "toxic"/"LABEL_1" with score &gt; 0.6 → <span class="tt-code">toxic_output</span> flag.'
+  },
+  nli: {
+    title: 'NLI policy contradiction check',
+    body: 'HuggingFace pipeline on <span class="tt-code">facebook/bart-large-mnli</span>. Premise = the policy statement, hypothesis = the answer. "contradiction" label with score &gt; 0.7 → <span class="tt-code">possible_policy_conflict</span>.'
+  },
+  report: {
+    title: 'assemble final report',
+    body: 'Attaches <span class="tt-code">final_output</span> (parsed JSON) to the report dict and returns it. Step 10 runs this across 6 adversarial prompts; Step 11 aggregates pass/fail counts.'
+  }
+};
+
+const tt = document.getElementById('tooltip');
+const ttTitle = document.getElementById('tt-title');
+const ttBody = document.getElementById('tt-body');
+
+document.querySelectorAll('[data-tt]').forEach(el => {
+  el.addEventListener('mouseenter', e => {
+    const key = el.dataset.tt;
+    if (!tips[key]) return;
+    ttTitle.textContent = tips[key].title;
+    ttBody.innerHTML = tips[key].body;
+    tt.classList.add('show');
+  });
+  el.addEventListener('mousemove', e => {
+    tt.style.left = (e.clientX + 14) + 'px';
+    tt.style.top  = (e.clientY + 14) + 'px';
+  });
+  el.addEventListener('mouseleave', () => tt.classList.remove('show'));
+});
+</script>
+</body>
+</html>
